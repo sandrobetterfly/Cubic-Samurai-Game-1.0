@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>SAMURAI ARENA</title>
+<title>Sandro vs Samurai</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { overflow:hidden; background:#000; font-family:'Courier New',monospace; }
@@ -69,7 +69,7 @@ canvas { display:block; }
 
 <!-- START SCREEN -->
 <div class="overlay" id="start-screen">
-  <div class="o-title" style="color:#cc2200;text-shadow:0 0 40px #cc0000">SAMURAI<br>ARENA</div>
+  <div class="o-title" style="color:#cc2200;text-shadow:0 0 40px #cc0000">SANDRO<br>VS SAMURAI</div>
   <div class="o-sub">3 LEVELS · ONE WARRIOR</div>
   <div class="o-ctrl">
     <span>↑ / ↓</span> &nbsp;&nbsp; MOVE FORWARD / BACKWARD<br>
@@ -79,7 +79,7 @@ canvas { display:block; }
     <span>F</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; HEAVY SHOT — every 5s<br>
     <span>G</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; BOMB — run + jump to survive
   </div>
-  <button class="o-btn" onclick="startGame()">[ ENTER ARENA ]</button>
+  <button class="o-btn" onclick="startGame()">[ START BATTLE ]</button>
 </div>
 
 <!-- LEVEL COMPLETE / GAME OVER SCREEN -->
@@ -776,7 +776,7 @@ function killPlayer(){
   document.getElementById('end-title').textContent='DEFEATED';
   document.getElementById('end-title').style.color='#ff3300';
   document.getElementById('end-title').style.textShadow='0 0 35px #ff3300';
-  document.getElementById('end-sub').textContent='THE SAMURAI CLAIMS VICTORY';
+  document.getElementById('end-sub').textContent='THE SAMURAI DEFEATS SANDRO';
   document.getElementById('heal-notice').textContent='';
   document.getElementById('retry-btn').textContent=`[ RETRY LEVEL ${currentLevel} ]`;
   document.getElementById('restart-btn').textContent='[ START FROM LEVEL 1 ]';
