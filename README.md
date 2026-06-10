@@ -3,7 +3,7 @@
 A browser-based 3D first-person arena shooter built with [Three.js](https://threejs.org/).  
 Face blocky samurai warriors across 3 escalating levels — each 25% harder than the last.
 
-**[▶ Play Now](https://sandro-k.github.io/Cubic-Samurai-Game-1.0/)**
+**[▶ Play Now](https://sigije.ge)**
 
 ---
 
