@@ -70,14 +70,14 @@ canvas { display:block; }
 <!-- START SCREEN -->
 <div class="overlay" id="start-screen">
   <div class="o-title" style="color:#cc2200;text-shadow:0 0 40px #cc0000">SANDRO<br>VS SAMURAI</div>
-  <div class="o-sub">3 LEVELS · ONE WARRIOR</div>
+  <div class="o-sub">5 LEVELS · ONE WARRIOR · WAREHOUSE WAR</div>
   <div class="o-ctrl">
     <span>↑ / ↓</span> &nbsp;&nbsp; MOVE FORWARD / BACKWARD<br>
     <span>← / →</span> &nbsp;&nbsp; STRAFE LEFT / RIGHT<br>
     <span>SPACE</span> &nbsp; JUMP<br>
-    <span>D</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; SHOOT (normal)<br>
-    <span>F</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; HEAVY SHOT — every 5s<br>
-    <span>G</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; BOMB — run + jump to survive
+    <span>D</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; LIGHT SHOT — 50 rounds, 1s reload<br>
+    <span>F</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; HEAVY SHOT — 20 rounds, 3s reload<br>
+    <span>G</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; BOMB — 3 per level, only way to hurt flyers
   </div>
   <button class="o-btn" onclick="startGame()">[ START BATTLE ]</button>
 </div>
@@ -108,7 +108,7 @@ canvas { display:block; }
   <div id="crosshair">⊕</div>
   <div id="damage-flash"></div>
   <div id="controls">↑↓ MOVE &nbsp;|&nbsp; ←→ STRAFE &nbsp;|&nbsp; SPACE JUMP &nbsp;|&nbsp; D NORMAL &nbsp;|&nbsp; F HEAVY &nbsp;|&nbsp; G BOMB</div>
-  <div id="level-indicator">LVL 1 / 3</div>
+  <div id="level-indicator">LVL 1 / 5</div>
 
   <div id="player-panel">
     <div class="hlabel">PLAYER</div>
@@ -119,9 +119,9 @@ canvas { display:block; }
   <div id="enemy-bars"></div>
 
   <div id="weapons">
-    <div class="wslot"><div class="wbox ready" id="w0"><div class="wicon">🔸</div><div class="wname">SHOT</div><div class="wcd" id="cd0">READY</div></div><div class="wkey">[ D ]</div></div>
-    <div class="wslot"><div class="wbox" id="w1"><div class="wicon">🔶</div><div class="wname">HEAVY</div><div class="wcd" id="cd1">5.0</div></div><div class="wkey">[ F ]</div></div>
-    <div class="wslot"><div class="wbox" id="w2"><div class="wicon">💣</div><div class="wname">BOMB</div><div class="wcd" id="cd2">—</div></div><div class="wkey">[ G ]</div></div>
+    <div class="wslot"><div class="wbox ready" id="w0"><div class="wicon">🟡</div><div class="wname">LIGHT</div><div class="wcd" id="cd0">50/50</div></div><div class="wkey">[ D ]</div></div>
+    <div class="wslot"><div class="wbox ready" id="w1"><div class="wicon">🟢</div><div class="wname">HEAVY</div><div class="wcd" id="cd1">20/20</div></div><div class="wkey">[ F ]</div></div>
+    <div class="wslot"><div class="wbox ready" id="w2"><div class="wicon">💣</div><div class="wname">BOMB</div><div class="wcd" id="cd2">x3</div></div><div class="wkey">[ G ]</div></div>
   </div>
 
   <div id="bomb-warn">⚠ BOMB! RUN + JUMP!</div>
@@ -137,7 +137,6 @@ canvas { display:block; }
 // ═══════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════
-const ARENA   = 11;
 const P_H     = 1.7;
 const P_SPEED = 6;
 const P_JUMP  = 9;
@@ -145,19 +144,68 @@ const GRAV    = -22;
 const MAX_HP  = 100;
 
 const W = {
-  normal:{ maxCd:0.28, damage:25, speed:30, size:0.10, color:0xffee00 },
-  heavy: { maxCd:5.0,  damage:55, speed:20, size:0.28, color:0xff8800 },
-  bomb:  { maxCd:null, damage:80, speed:9,  size:0.32, color:0xff2200, fuseTime:1.8, blastR:8.5 },
+  normal:{ fireRate:0.15, magSize:50, reloadTime:1.0, damage:25, speed:30, size:0.10, color:0xffee00 },
+  heavy: { fireRate:0.40, magSize:20, reloadTime:3.0, damage:55, speed:20, size:0.28, color:0x22ff55 },
+  bomb:  { maxCount:3, damage:80, speed:9,  size:0.32, color:0xff2200, fuseTime:1.8, blastR:8.5 },
+  fire:  { speed:16, size:0.22, color:0xff5500 },
+  laser: { speed:34, size:0.13, color:0x00eaff },
 };
+const DIVE_BLAST_R = 3.5;
 const EB_SPEED = 13;
 
-// Difficulty scales by 1.25x each level
-const DIFF = [1, 1, 1.25, 1.5625]; // index = level
+// Difficulty scales by 1.25x each level (compounding)
+const DIFF = [1, 1, 1.25, 1.5625, 1.953125, 2.44140625]; // index = level
 
 const LEVEL_CFG = [null,
-  { count:1, starts:[[0,0,-8]],                        eyeCol:[0xff0000], armorCol:[0x160808] },
-  { count:2, starts:[[-4.5,0,-7],[4.5,0,-7]],          eyeCol:[0xff4400,0xff4400], armorCol:[0x1a0606,0x1a0606] },
-  { count:3, starts:[[-5.5,0,-8],[0,0,-9.5],[5.5,0,-8]], eyeCol:[0xdd00ff,0xdd00ff,0xdd00ff], armorCol:[0x0e0516,0x0e0516,0x0e0516] },
+  // L1 — classic samurai
+  { count:1, starts:[[0,0,-8]], style:['classic'],
+    eyeCol:[0xff0000], armorCol:[0x160808] },
+  // L2 — classic + ronin
+  { count:2, starts:[[-4.5,0,-7],[4.5,0,-7]], style:['classic','ronin'],
+    eyeCol:[0xff4400,0x33aaff], armorCol:[0x1a0606,0x0a1622] },
+  // L3 — classic + ronin + oni mix
+  { count:3, starts:[[-5.5,0,-8],[0,0,-9.5],[5.5,0,-8]], style:['classic','ronin','oni'],
+    eyeCol:[0xff4400,0x33aaff,0x99ff22], armorCol:[0x1a0606,0x0a1622,0x16240a] },
+  // L4 — 2 ground (mixed styles) + 1 flying samurai
+  { count:3, starts:[[-5,0,-8],[5,0,-8],[0,6,-9]], style:['oni','ronin','flying'],
+    eyeCol:[0x99ff22,0x33aaff,0xdd44ff], armorCol:[0x16240a,0x0a1622,0x1c0e2c] },
+  // L5 — boss only
+  { count:1, starts:[[0,0,-10]], style:['boss'],
+    eyeCol:[0xff6600], armorCol:[0x140505] },
+];
+
+// Per-level warehouse environment (size, color scheme, crates, torches)
+const LEVEL_ENV = [null,
+  // L1 — rust / red
+  { size:11, floor:0x1c0b07, wall:0x130704, trim:0x7a1212, crateCol:0x2a140c,
+    ambient:0x1a0808, mainLight:0xff5520, torchCol:0xff5500, fog:0x060203,
+    torches:[[-9.5,3,-9.5],[9.5,3,-9.5],[-9.5,3,9.5],[9.5,3,9.5]],
+    crates:[[-5,-5,1.3,4.6,1.3],[5,-5,1.3,4.6,1.3],[-5,5,1.3,4.6,1.3],[5,5,1.3,4.6,1.3],
+            [-3,1.5,1.4,1.4,1.4],[3,-1.5,1.6,1.8,1.6]] },
+  // L2 — steel blue
+  { size:13, floor:0x0a1018, wall:0x060c14, trim:0x2255aa, crateCol:0x16324a,
+    ambient:0x0a1422, mainLight:0x3388ff, torchCol:0x2266dd, fog:0x040810,
+    torches:[[-11.5,3,-11.5],[11.5,3,-11.5],[-11.5,3,11.5],[11.5,3,11.5]],
+    crates:[[-6,-6,1.3,4.6,1.3],[6,-6,1.3,4.6,1.3],[-6,6,1.3,4.6,1.3],[6,6,1.3,4.6,1.3],
+            [-3.5,2,1.6,1.8,1.6],[3.5,-2,1.6,1.8,1.6],[0,4,1.4,1.4,1.4],[-2,-3.5,1.4,2.2,1.4]] },
+  // L3 — toxic green/yellow
+  { size:15, floor:0x0c1408, wall:0x081005, trim:0x88aa00, crateCol:0x223a10,
+    ambient:0x0e1808, mainLight:0x99ff22, torchCol:0xaadd00, fog:0x050a02,
+    torches:[[-13.5,3,-13.5],[13.5,3,-13.5],[-13.5,3,13.5],[13.5,3,13.5]],
+    crates:[[-7,-7,1.3,4.6,1.3],[7,-7,1.3,4.6,1.3],[-7,7,1.3,4.6,1.3],[7,7,1.3,4.6,1.3],
+            [-4,3,1.6,1.8,1.6],[4,-3,1.6,1.8,1.6],[0,5,1.4,2.2,1.4],[-3,-5,1.4,1.4,1.4],[5,1,1.6,2.6,1.6]] },
+  // L4 — purple neon (catwalk warehouse)
+  { size:17, floor:0x10081c, wall:0x0a0514, trim:0x9933ff, crateCol:0x2a1140,
+    ambient:0x140a20, mainLight:0xaa44ff, torchCol:0xbb55ff, fog:0x07040c,
+    torches:[[-15.5,3,-15.5],[15.5,3,-15.5],[-15.5,3,15.5],[15.5,3,15.5]],
+    crates:[[-8,-8,1.3,4.6,1.3],[8,-8,1.3,4.6,1.3],[-8,8,1.3,4.6,1.3],[8,8,1.3,4.6,1.3],
+            [-4.5,4,1.6,1.8,1.6],[4.5,-4,1.6,1.8,1.6],[0,6,1.4,2.6,1.4],[-5,-2,1.6,2.2,1.6],[5,2,1.6,2.2,1.6]] },
+  // L5 — boss arena, black / molten orange
+  { size:19, floor:0x0a0606, wall:0x060303, trim:0xff5500, crateCol:0x1a0d0a,
+    ambient:0x140505, mainLight:0xff6600, torchCol:0xff4400, fog:0x040202,
+    torches:[[-17.5,3,-17.5],[17.5,3,-17.5],[-17.5,3,17.5],[17.5,3,17.5]],
+    crates:[[-9,-9,1.6,4.6,1.6],[9,-9,1.6,4.6,1.6],[-9,9,1.6,4.6,1.6],[9,9,1.6,4.6,1.6],
+            [-9,0,1.6,2.6,1.6],[9,0,1.6,2.6,1.6],[0,-9,1.6,2.6,1.6],[0,9,1.6,2.6,1.6]] },
 ];
 
 function randBombCd(){ return 10+Math.random()*5; }
@@ -184,74 +232,114 @@ const camera = new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,100);
 camera.rotation.order='YXZ';
 
 // ═══════════════════════════════════════════════════════
-// LIGHTING
+// LIGHTING (recolored per level by buildArena)
 // ═══════════════════════════════════════════════════════
-scene.add(new THREE.AmbientLight(0x1a0808,0.9));
+const ambLight=new THREE.AmbientLight(0x1a0808,0.9); scene.add(ambLight);
 const cLight=new THREE.PointLight(0xff5520,2.2,24);
 cLight.position.set(0,5.5,0); cLight.castShadow=true; scene.add(cLight);
 
-const TORCH_POS=[[-9.5,3,-9.5],[9.5,3,-9.5],[-9.5,3,9.5],[9.5,3,9.5]];
 const tLights=[],tFlames=[];
-TORCH_POS.forEach(([x,y,z])=>{
-  const l=new THREE.PointLight(0xff5500,2.8,13); l.position.set(x,y,z); scene.add(l); tLights.push(l);
-  const s=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.55,0.12),new THREE.MeshLambertMaterial({color:0x5c3317}));
-  s.position.set(x,y-0.3,z); scene.add(s);
-  const f=new THREE.Mesh(new THREE.SphereGeometry(0.18,6,5),new THREE.MeshBasicMaterial({color:0xff6600}));
-  f.position.set(x,y+0.1,z); scene.add(f); tFlames.push({mesh:f,by:y+0.1});
-});
 
 // ═══════════════════════════════════════════════════════
-// ARENA
+// ARENA (rebuilt per level by buildArena — warehouse theme)
 // ═══════════════════════════════════════════════════════
-const Mfl=new THREE.MeshLambertMaterial({color:0x1c0b07});
-const Mwl=new THREE.MeshLambertMaterial({color:0x130704});
-const Mtr=new THREE.MeshLambertMaterial({color:0x7a1212});
-const Mpl=new THREE.MeshLambertMaterial({color:0x1a0906});
+let ARENA=11;
+let OBSTACLES=[]; // {x,z,r} circular collision for crates/pillars
+const arenaGroup=new THREE.Group(); scene.add(arenaGroup);
 
-const flr=new THREE.Mesh(new THREE.PlaneGeometry(ARENA*2,ARENA*2),Mfl);
-flr.rotation.x=-Math.PI/2; flr.receiveShadow=true; scene.add(flr);
-
-// Grid lines
-for(let i=-ARENA;i<=ARENA;i+=2.2){
-  [[ARENA*2,0.02,true],[0.02,ARENA*2,false]].forEach(([w,h,hz])=>{
-    const g=new THREE.Mesh(new THREE.PlaneGeometry(w,h),
-      new THREE.MeshBasicMaterial({color:0x3a1208,transparent:true,opacity:0.35}));
-    g.rotation.x=-Math.PI/2; g.position.set(hz?0:i,0.01,hz?i:0); scene.add(g);
-  });
+function addCrate(x,z,sx,sy,sz,colCrate,colTrim,collide=true){
+  const mC=new THREE.MeshLambertMaterial({color:colCrate});
+  const mT=new THREE.MeshLambertMaterial({color:colTrim});
+  const c=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mC);
+  c.position.set(x,sy/2,z); c.castShadow=true; c.receiveShadow=true; arenaGroup.add(c);
+  const band=new THREE.Mesh(new THREE.BoxGeometry(sx+0.02,sy*0.18,sz+0.02),mT);
+  band.position.set(x,sy*0.55,z); arenaGroup.add(band);
+  if(collide)OBSTACLES.push({x,z,r:Math.max(sx,sz)/2*1.05});
 }
 
-const ceil=new THREE.Mesh(new THREE.PlaneGeometry(ARENA*2,ARENA*2),new THREE.MeshLambertMaterial({color:0x080303}));
-ceil.rotation.x=Math.PI/2; ceil.position.y=8; scene.add(ceil);
+function buildArena(lvl){
+  // clear previous
+  while(arenaGroup.children.length)arenaGroup.remove(arenaGroup.children[0]);
+  tLights.forEach(l=>scene.remove(l)); tLights.length=0;
+  tFlames.forEach(f=>scene.remove(f.mesh)); tFlames.length=0;
+  OBSTACLES=[];
 
-[[[0,4,-ARENA],[ARENA*2,8,0.5]],[[0,4,ARENA],[ARENA*2,8,0.5]],[[-ARENA,4,0],[0.5,8,ARENA*2]],[[ARENA,4,0],[0.5,8,ARENA*2]]].forEach(([[px,py,pz],[sx,sy,sz]])=>{
-  const w=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),Mwl);
-  w.position.set(px,py,pz); w.receiveShadow=true; scene.add(w);
-  [1.9,0.14].forEach(ty=>{ const t=new THREE.Mesh(new THREE.BoxGeometry(sx+0.01,0.22,sz+0.01),Mtr); t.position.set(px,ty,pz); scene.add(t); });
-});
+  const env=LEVEL_ENV[lvl];
+  ARENA=env.size;
+  scene.background=new THREE.Color(env.fog);
+  scene.fog=new THREE.FogExp2(env.fog,0.04);
+  ambLight.color.setHex(env.ambient); ambLight.intensity=0.9;
+  cLight.color.setHex(env.mainLight); cLight.position.set(0,5.5,0);
 
-const PILLARS=[[-5,-5],[5,-5],[-5,5],[5,5]];
-PILLARS.forEach(([px,pz])=>{
-  const p=new THREE.Mesh(new THREE.BoxGeometry(1.1,4.6,1.1),Mpl); p.position.set(px,2.3,pz); p.castShadow=true; scene.add(p);
-  [4.7,0.13].forEach(cy=>{ const c=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.22,1.4),Mtr); c.position.set(px,cy,pz); scene.add(c); });
-});
-const alt=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.55,2.6),Mpl); alt.position.set(0,0.27,0); scene.add(alt);
-const altR=new THREE.Mesh(new THREE.BoxGeometry(2.9,0.1,2.9),Mtr); altR.position.set(0,0.55,0); scene.add(altR);
+  const Mfl=new THREE.MeshLambertMaterial({color:env.floor});
+  const Mwl=new THREE.MeshLambertMaterial({color:env.wall});
+  const Mtr=new THREE.MeshLambertMaterial({color:env.trim});
+  const Mceil=new THREE.MeshLambertMaterial({color:env.wall});
+
+  const flr=new THREE.Mesh(new THREE.PlaneGeometry(ARENA*2,ARENA*2),Mfl);
+  flr.rotation.x=-Math.PI/2; flr.receiveShadow=true; arenaGroup.add(flr);
+
+  // Grid lines
+  for(let i=-ARENA;i<=ARENA;i+=2.2){
+    [[ARENA*2,0.02,true],[0.02,ARENA*2,false]].forEach(([w,h,hz])=>{
+      const g=new THREE.Mesh(new THREE.PlaneGeometry(w,h),
+        new THREE.MeshBasicMaterial({color:env.trim,transparent:true,opacity:0.22}));
+      g.rotation.x=-Math.PI/2; g.position.set(hz?0:i,0.01,hz?i:0); arenaGroup.add(g);
+    });
+  }
+
+  const ceil=new THREE.Mesh(new THREE.PlaneGeometry(ARENA*2,ARENA*2),Mceil);
+  ceil.rotation.x=Math.PI/2; ceil.position.y=8; arenaGroup.add(ceil);
+
+  [[[0,4,-ARENA],[ARENA*2,8,0.5]],[[0,4,ARENA],[ARENA*2,8,0.5]],[[-ARENA,4,0],[0.5,8,ARENA*2]],[[ARENA,4,0],[0.5,8,ARENA*2]]].forEach(([[px,py,pz],[sx,sy,sz]])=>{
+    const w=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),Mwl);
+    w.position.set(px,py,pz); w.receiveShadow=true; arenaGroup.add(w);
+    [1.9,0.14].forEach(ty=>{ const t=new THREE.Mesh(new THREE.BoxGeometry(sx+0.01,0.22,sz+0.01),Mtr); t.position.set(px,ty,pz); arenaGroup.add(t); });
+  });
+
+  // Warehouse crates / cover obstacles
+  env.crates.forEach(([x,z,sx,sy,sz])=>addCrate(x,z,sx,sy,sz,env.crateCol,env.trim));
+
+  // Torches (recolored per level)
+  env.torches.forEach(([x,y,z])=>{
+    const l=new THREE.PointLight(env.torchCol,2.8,13); l.position.set(x,y,z); scene.add(l); tLights.push(l);
+    const s=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.55,0.12),new THREE.MeshLambertMaterial({color:0x5c3317}));
+    s.position.set(x,y-0.3,z); arenaGroup.add(s);
+    const f=new THREE.Mesh(new THREE.SphereGeometry(0.18,6,5),new THREE.MeshBasicMaterial({color:env.torchCol}));
+    f.position.set(x,y+0.1,z); scene.add(f); tFlames.push({mesh:f,by:y+0.1});
+  });
+
+  // Center altar
+  const Mpl=new THREE.MeshLambertMaterial({color:env.crateCol});
+  const Mtr2=new THREE.MeshLambertMaterial({color:env.trim});
+  const alt=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.55,2.6),Mpl); alt.position.set(0,0.27,0); arenaGroup.add(alt);
+  const altR=new THREE.Mesh(new THREE.BoxGeometry(2.9,0.1,2.9),Mtr2); altR.position.set(0,0.55,0); arenaGroup.add(altR);
+}
 
 // ═══════════════════════════════════════════════════════
 // SAMURAI MODEL
 // ═══════════════════════════════════════════════════════
 function bx(w,h,d,mat){ return new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); }
 
+const STYLE_TRIM = {
+  classic:{ r:0x8b0000, br:0xbb0000, g:0xbf9000, aura:null },
+  ronin:  { r:0x224466, br:0x3377aa, g:0x88aacc, aura:null },
+  oni:    { r:0x335500, br:0x66aa00, g:0x99ff22, aura:0x66aa00 },
+  boss:   { r:0x551100, br:0xff5500, g:0xffaa33, aura:0xff5500 },
+};
+
 function createSamurai(opts={}){
   const r=new THREE.Group();
   const eyeCol  = opts.eyeColor  || 0xff0000;
   const baseCol = opts.armorColor|| 0x160808;
+  const style   = opts.style || 'classic';
+  const trim    = STYLE_TRIM[style] || STYLE_TRIM.classic;
 
   const mA =new THREE.MeshLambertMaterial({color:baseCol});
   const mD =new THREE.MeshLambertMaterial({color:0x0c0404});
-  const mR =new THREE.MeshLambertMaterial({color:opts.level===3?0x550077:0x8b0000});
-  const mBR=new THREE.MeshLambertMaterial({color:opts.level===3?0x8800cc:0xbb0000});
-  const mG =new THREE.MeshLambertMaterial({color:opts.level===3?0xcc88ff:0xbf9000});
+  const mR =new THREE.MeshLambertMaterial({color:trim.r});
+  const mBR=new THREE.MeshLambertMaterial({color:trim.br});
+  const mG =new THREE.MeshLambertMaterial({color:trim.g});
   const mS =new THREE.MeshLambertMaterial({color:0x909090});
   const mSk=new THREE.MeshLambertMaterial({color:0xc8835a});
   const mBr=new THREE.MeshLambertMaterial({color:0x3d1f0a});
@@ -280,9 +368,20 @@ function createSamurai(opts={}){
   add(bx(0.06,0.06,0.06,mSk),0,2.13,0.24);
   const el=new THREE.PointLight(eyeCol,1.6,2.8); el.position.set(0,2.22,0.4); r.add(el); r.userData.eyeLight=el;
 
-  // Level 3: dark aura glow
-  if(opts.level===3){
-    const aura=new THREE.PointLight(0x8800cc,1.5,4); aura.position.set(0,1,0); r.add(aura);
+  // Aura glow for menacing styles
+  if(trim.aura){
+    const aura=new THREE.PointLight(trim.aura,1.5,4); aura.position.set(0,1,0); r.add(aura);
+  }
+
+  // Style-specific silhouette tweaks
+  if(style==='oni'){
+    // horned helmet
+    add(bx(0.07,0.34,0.07,mBR),-0.16,2.50,0,0,0,0.5); add(bx(0.07,0.34,0.07,mBR),0.16,2.50,0,0,0,-0.5);
+    r.scale.set(1.16,1.04,1.16);
+  } else if(style==='ronin'){
+    // leaner, jagged broken pauldron spike
+    add(bx(0.05,0.30,0.05,mG),0.50,1.95,0,0,0,-0.5);
+    r.scale.set(0.90,1.08,0.90);
   }
 
   add(bx(0.50,0.24,0.50,mA),0,2.47,0); add(bx(0.56,0.06,0.56,mG),0,2.60,0);
@@ -305,6 +404,55 @@ function createSamurai(opts={}){
   return r;
 }
 
+// Flying samurai — stripped torso/head with floating armor plates + thruster glow
+function createFlyingSamurai(opts={}){
+  const r=new THREE.Group();
+  const eyeCol  = opts.eyeColor  || 0xdd44ff;
+  const baseCol = opts.armorColor|| 0x1c0e2c;
+  const mA=new THREE.MeshLambertMaterial({color:baseCol});
+  const mD=new THREE.MeshLambertMaterial({color:0x0c0414});
+  const mG=new THREE.MeshLambertMaterial({color:0x9933ff});
+  const mSk=new THREE.MeshLambertMaterial({color:0xc8835a});
+  const mGl=new THREE.MeshBasicMaterial({color:eyeCol});
+  const mTh=new THREE.MeshBasicMaterial({color:0x66ddff});
+
+  const add=(m,x,y,z,rx=0,ry=0,rz=0)=>{m.position.set(x,y,z);m.rotation.set(rx,ry,rz);m.castShadow=true;r.add(m);return m;};
+
+  add(bx(0.66,0.62,0.40,mA),0,1.33,0);
+  add(bx(0.68,0.06,0.42,mG),0,1.62,0);
+  add(bx(0.20,0.16,0.20,mSk),0,1.78,0);
+  const head=add(bx(0.40,0.40,0.40,mSk),0,2.05,0); r.userData.head=head;
+  add(bx(0.10,0.08,0.04,mGl),-0.11,2.08,0.21); add(bx(0.10,0.08,0.04,mGl),0.11,2.08,0.21);
+  const el=new THREE.PointLight(eyeCol,1.6,2.8); el.position.set(0,2.08,0.4); r.add(el); r.userData.eyeLight=el;
+
+  // floating shoulder plates (orbit slightly in update loop via userData)
+  const plateL=add(bx(0.34,0.28,0.34,mA),-0.62,1.45,0); const plateR=add(bx(0.34,0.28,0.34,mA),0.62,1.45,0);
+  r.userData.plates=[plateL,plateR];
+
+  // thruster glow underneath
+  const thr=new THREE.Mesh(new THREE.SphereGeometry(0.30,8,6),mTh);
+  thr.position.set(0,0.55,0); r.add(thr);
+  const thrL=new THREE.PointLight(0x66ddff,3,4); thrL.position.set(0,0.45,0); r.add(thrL);
+  r.userData.thruster=thr; r.userData.thrusterLight=thrL;
+
+  const aura=new THREE.PointLight(0x9933ff,1.5,4); aura.position.set(0,1.5,0); r.add(aura);
+  return r;
+}
+
+// Giant boss samurai — combines classic/ronin/oni motifs at large scale, molten cracks
+function createBossSamurai(opts={}){
+  const r=createSamurai({eyeColor:opts.eyeColor||0xff6600, armorColor:opts.armorColor||0x140505, style:'boss'});
+  r.scale.set(1.6,1.6,1.6);
+  // extra molten cracks across torso
+  const mCrack=new THREE.MeshBasicMaterial({color:0xff5500});
+  const add=(m,x,y,z,rx=0,ry=0,rz=0)=>{m.position.set(x,y,z);m.rotation.set(rx,ry,rz);r.add(m);return m;};
+  add(bx(0.05,0.5,0.05,mCrack),-0.2,1.3,0.21,0,0,0.3);
+  add(bx(0.05,0.4,0.05,mCrack),0.25,0.9,0.21,0,0,-0.4);
+  add(bx(0.05,0.35,0.05,mCrack),0.0,1.7,0.21,0,0,0.15);
+  const bigAura=new THREE.PointLight(0xff5500,2.5,7); bigAura.position.set(0,1.5,0); r.add(bigAura);
+  return r;
+}
+
 // ═══════════════════════════════════════════════════════
 // GAME STATE
 // ═══════════════════════════════════════════════════════
@@ -318,7 +466,16 @@ const player = {
   yaw: 0, hp: MAX_HP, grounded: true, bobT: 0,
 };
 
-const wCd = { normal:0, heavy:5, bomb:randBombCd() };
+const ammo = {
+  normal:{ cur:W.normal.magSize, fireT:0, reloadT:0 },
+  heavy: { cur:W.heavy.magSize,  fireT:0, reloadT:0 },
+  bomb:  { count:W.bomb.maxCount, cd:0 },
+};
+function resetAmmo(){
+  ammo.normal.cur=W.normal.magSize; ammo.normal.fireT=0; ammo.normal.reloadT=0;
+  ammo.heavy.cur=W.heavy.magSize;   ammo.heavy.fireT=0;  ammo.heavy.reloadT=0;
+  ammo.bomb.count=W.bomb.maxCount;  ammo.bomb.cd=0;
+}
 
 let enemies    = [];
 let bullets    = [];
@@ -327,7 +484,7 @@ let explosions = [];
 
 // ── COLLISION HELPERS ──
 function wallClamp(p){ const L=ARENA-0.5; p.x=Math.max(-L,Math.min(L,p.x)); p.z=Math.max(-L,Math.min(L,p.z)); }
-function pillarPush(p){ PILLARS.forEach(([px,pz])=>{ const dx=p.x-px,dz=p.z-pz,d=Math.sqrt(dx*dx+dz*dz); if(d<1.15&&d>0){p.x=px+dx/d*1.15;p.z=pz+dz/d*1.15;} }); }
+function obstaclePush(p){ OBSTACLES.forEach(({x,z,r})=>{ const dx=p.x-x,dz=p.z-z,d=Math.sqrt(dx*dx+dz*dz); if(d<r&&d>0){p.x=x+dx/d*r;p.z=z+dz/d*r;} }); }
 
 // ═══════════════════════════════════════════════════════
 // LEVEL INIT
@@ -337,27 +494,56 @@ function clearEnemies(){
   enemies=[];
 }
 
+// Style stat multipliers: [hpMul, speedMul, dmgMul]
+const STYLE_MUL = {
+  classic:[1.0, 1.0,  1.0],
+  ronin:  [0.85,1.2,  1.0],
+  oni:    [1.15,0.95, 1.1],
+  flying: [0.8, 1.0,  1.0],
+  boss:   [1.5, 1.3,  1.2],
+};
+const STYLE_NAME = { classic:'SAMURAI', ronin:'RONIN', oni:'ONI', flying:'FLYING SAMURAI', boss:'GIANT SAMURAI' };
+const ROMAN=['I','II','III'];
+function enemyLabel(e){
+  if(e.style==='boss'||e.style==='flying')return STYLE_NAME[e.style];
+  let n=0;
+  for(let j=0;j<=e.index;j++) if(enemies[j]&&enemies[j].style===e.style) n++;
+  return `${STYLE_NAME[e.style]} ${ROMAN[n-1]||n}`;
+}
+
 function initLevel(lvl){
   currentLevel=lvl;
   clearEnemies();
+  buildArena(lvl);
   const cfg=LEVEL_CFG[lvl];
   const diff=DIFF[lvl];
 
-  const speed         = 2.8 * diff;
-  const shootInterval = 2.1 / diff;
-  const damage        = Math.round(18 * diff);
-  const hp            = Math.round(100 * (1 + (diff-1)*0.5)); // slight HP boost on harder levels
+  const baseSpeed         = 2.8 * diff;
+  const baseShootInterval = 2.1 / diff;
+  const baseDamage        = Math.round(18 * diff);
+  const baseHp            = Math.round(100 * (1 + (diff-1)*0.5)); // slight HP boost on harder levels
+
+  // Player spawn near the back wall, scaled to arena size
+  player.pos.set(0,P_H,ARENA-2.5); player.vel.set(0,0,0);
+  player.yaw=Math.PI;
 
   for(let i=0;i<cfg.count;i++){
-    const mesh=createSamurai({
-      eyeColor:  cfg.eyeCol[i],
-      armorColor:cfg.armorCol[i],
-      level: lvl,
-    });
+    const style=cfg.style[i];
+    const [hpMul,spdMul,dmgMul]=STYLE_MUL[style];
+    const hp     = Math.round(baseHp*hpMul);
+    const speed  = baseSpeed*spdMul;
+    const damage = Math.round(baseDamage*dmgMul);
+
+    let mesh;
+    if(style==='flying')     mesh=createFlyingSamurai({eyeColor:cfg.eyeCol[i],armorColor:cfg.armorCol[i]});
+    else if(style==='boss')  mesh=createBossSamurai({eyeColor:cfg.eyeCol[i],armorColor:cfg.armorCol[i]});
+    else mesh=createSamurai({eyeColor:cfg.eyeCol[i],armorColor:cfg.armorCol[i],style,level:lvl});
+
     mesh.position.set(...cfg.starts[i]);
     scene.add(mesh);
-    enemies.push({
-      mesh, hp, maxHp:hp,
+
+    const enemy={
+      mesh, hp, maxHp:hp, style,
       shootT: 1.5 + Math.random()*1.5,
       strafeDir: (i%2===0?1:-1),
       strafeT: 1+Math.random()*2,
@@ -365,14 +551,28 @@ function initLevel(lvl){
       walkT: Math.random()*Math.PI*2,
       alive: true,
       velY: 0, grounded: true, jumpedForBomb: false,
-      speed, damage, shootInterval,
+      speed, damage, shootInterval: baseShootInterval,
       attackRange: 8.5 + lvl*0.5,
       index: i,
-    });
+    };
+
+    if(style==='flying'){
+      enemy.bombOnly=true;
+      enemy.flightState='OUT';      // OUT (hidden above) | IN (descending) | DIVE | LEAVE
+      enemy.flightT=2+Math.random()*2;
+      enemy.homeY=10;
+      mesh.position.y=enemy.homeY;
+    }
+    if(style==='boss'){
+      enemy.attackT=2.0;
+      enemy.attackRange=ARENA*1.3;
+    }
+
+    enemies.push(enemy);
   }
 
   buildEnemyHUD();
-  document.getElementById('level-indicator').textContent=`LVL ${lvl} / 3`;
+  document.getElementById('level-indicator').textContent=`LVL ${lvl} / 5`;
 
   // Reset bullets
   bullets.forEach(b=>scene.remove(b.mesh)); bullets=[];
@@ -383,10 +583,15 @@ function initLevel(lvl){
 function buildEnemyHUD(){
   const container=document.getElementById('enemy-bars');
   container.innerHTML='';
-  const ROMAN=['I','II','III'];
+  const styleCounts={};
   enemies.forEach((e,i)=>{
+    let label=STYLE_NAME[e.style]||'SAMURAI';
+    if(e.style!=='boss'&&e.style!=='flying'){
+      styleCounts[e.style]=(styleCounts[e.style]||0)+1;
+      label=`${label} ${ROMAN[styleCounts[e.style]-1]||styleCounts[e.style]}`;
+    }
     const wrap=document.createElement('div'); wrap.className='e-bar-wrap'; wrap.id=`ep${i}`;
-    wrap.innerHTML=`<div class="e-bar-label">SAMURAI ${ROMAN[i]}</div>
+    wrap.innerHTML=`<div class="e-bar-label">${label}</div>
       <div class="e-track"><div class="e-fill" id="ef${i}" style="width:100%"></div></div>
       <div class="e-val" id="ev${i}">${e.hp}</div>`;
     container.appendChild(wrap);
@@ -442,10 +647,11 @@ function updateHUD(){
   pfEl.style.background=ph<30?'#ff2200':ph<60?'#ffaa00':'linear-gradient(90deg,#00ff88,#00cc55)';
 
   // Weapons
-  const nR=wCd.normal<=0, hR=wCd.heavy<=0, bR=wCd.bomb<=0;
-  w0.className='wbox'+(nR?' ready':''); cd0.textContent=nR?'READY':wCd.normal.toFixed(1);
-  w1.className='wbox'+(hR?' ready':''); cd1.textContent=hR?'READY':wCd.heavy.toFixed(1);
-  w2.className='wbox'+(bR?' ready':''); cd2.textContent=bR?'READY':wCd.bomb.toFixed(1);
+  const an=ammo.normal, ah=ammo.heavy, ab=ammo.bomb;
+  const nR=an.reloadT<=0, hR=ah.reloadT<=0, bR=ab.cd<=0&&ab.count>0;
+  w0.className='wbox'+(nR&&an.cur>0?' ready':''); cd0.textContent=nR?(an.cur+'/'+W.normal.magSize):'RLD '+an.reloadT.toFixed(1);
+  w1.className='wbox'+(hR&&ah.cur>0?' ready':''); cd1.textContent=hR?(ah.cur+'/'+W.heavy.magSize):'RLD '+ah.reloadT.toFixed(1);
+  w2.className='wbox'+(bR?' ready':''); cd2.textContent=ab.cd>0?('x'+ab.count+' '+ab.cd.toFixed(1)):('x'+ab.count);
 
   // Enemy bars
   enemies.forEach((e,i)=>{
@@ -465,20 +671,22 @@ function updateHUD(){
 // ═══════════════════════════════════════════════════════
 // BULLETS / SPARKS / EXPLOSIONS
 // ═══════════════════════════════════════════════════════
-function spawnBullet(origin,dir,isPlayer,type='normal'){
+function spawnBullet(origin,dir,isPlayer,type='normal',dmg=null){
   const wp=W[type]||W.normal;
   const m=new THREE.Mesh(new THREE.SphereGeometry(wp.size,8,6),new THREE.MeshBasicMaterial({color:wp.color}));
   m.position.copy(origin);
   m.add(new THREE.PointLight(wp.color, type==='bomb'?8:type==='heavy'?6:4, type==='bomb'?5:type==='heavy'?4:3));
   scene.add(m);
-  const obj={mesh:m,vel:dir.clone().multiplyScalar(wp.speed),isPlayer,type,life:3.5};
+  const obj={mesh:m,vel:dir.clone().multiplyScalar(wp.speed),isPlayer,type,life:3.5,dmg:dmg!=null?dmg:wp.damage};
   if(type==='bomb'){obj.fuse=W.bomb.fuseTime;obj.vel.y=4.5;}
   bullets.push(obj);
   if(isPlayer){
     if(type==='normal')snd(900,0.07,'sawtooth',0.18,200);
     else if(type==='heavy')snd(600,0.13,'sawtooth',0.25,150);
     else snd(180,0.22,'sine',0.35,80);
-  } else snd(420,0.11,'sawtooth',0.11,140);
+  } else if(type==='laser')snd(1400,0.18,'sawtooth',0.16,900);
+  else if(type==='fire')snd(300,0.16,'sawtooth',0.14,90);
+  else snd(420,0.11,'sawtooth',0.11,140);
 }
 
 function spawnSparks(pos,col,n=8){
@@ -513,9 +721,9 @@ function detonateBomb(pos){
     if(!safe&&d<W.bomb.blastR){
       const dmg=Math.max(15,Math.round(W.bomb.damage*(1-d/W.bomb.blastR)));
       e.hp-=dmg;
-      logMsg(`💥 BOMB HIT Samurai ${['I','II','III'][e.index]}! HP:${Math.max(0,e.hp)}`,'#ff8800');
+      logMsg(`💥 BOMB HIT ${enemyLabel(e)}! HP:${Math.max(0,e.hp)}`,'#ff8800');
       if(e.hp<=0)killEnemy(e);
-    } else if(safe) logMsg(`⚡ Samurai ${['I','II','III'][e.index]} DODGED BOMB!`,'#ffdd00');
+    } else if(safe) logMsg(`⚡ ${enemyLabel(e)} DODGED BOMB!`,'#ffdd00');
   });
   const pd=pos.distanceTo(player.pos);
   if(pd<5){ const sd=Math.round(50*(1-pd/5)); if(sd>0){ player.hp-=sd; dfEl.style.background='rgba(255,140,0,0.55)'; flashT=0.25; logMsg(`🔥 SELF DAMAGE: -${sd}`,'rgba(255,120,0,0.9)'); if(player.hp<=0)killPlayer(); } }
@@ -525,8 +733,17 @@ function detonateBomb(pos){
 // SHOOTING
 // ═══════════════════════════════════════════════════════
 function shoot(type){
-  if(!gameActive||wCd[type]>0)return;
-  wCd[type]=type==='bomb'?randBombCd():W[type].maxCd;
+  if(!gameActive)return;
+  if(type==='bomb'){
+    if(ammo.bomb.cd>0||ammo.bomb.count<=0)return;
+    ammo.bomb.count--; ammo.bomb.cd=randBombCd();
+  } else {
+    const a=ammo[type];
+    if(a.reloadT>0||a.fireT>0)return;
+    if(a.cur<=0){ a.reloadT=W[type].reloadTime; return; }
+    a.cur--; a.fireT=W[type].fireRate;
+    if(a.cur<=0)a.reloadT=W[type].reloadTime;
+  }
   const dir=new THREE.Vector3(-Math.sin(player.yaw),0,-Math.cos(player.yaw));
   const origin=player.pos.clone(); origin.y-=0.1;
   spawnBullet(origin,dir,true,type);
@@ -535,12 +752,69 @@ function shoot(type){
 }
 
 // ═══════════════════════════════════════════════════════
+// FLYING SAMURAI — fly-in / dive-bomb / fly-out cycle
+// ═══════════════════════════════════════════════════════
+function updateFlyingSamurai(e,dt){
+  const m=e.mesh;
+  e.flightT-=dt;
+  if(m.userData.plates) m.userData.plates.forEach((p,i)=>p.rotation.y+=dt*(i===0?2:-2));
+  if(m.userData.thruster) m.userData.thruster.scale.setScalar(1+Math.sin(Date.now()*0.01)*0.15);
+
+  switch(e.flightState){
+    case 'OUT':
+      m.position.y=e.homeY+Math.sin(Date.now()*0.001)*0.3;
+      if(e.flightT<=0){
+        e.flightState='IN'; e.flightT=1.2; e.fromPos=m.position.clone();
+        e.diveTarget=new THREE.Vector3(player.pos.x,3.5,player.pos.z);
+      }
+      break;
+    case 'IN': {
+      const p=Math.min(1,1-Math.max(0,e.flightT)/1.2);
+      m.position.lerpVectors(e.fromPos,e.diveTarget,p);
+      if(e.flightT<=0){
+        e.flightState='DIVE'; e.flightT=0.5; e.fromPos=m.position.clone();
+        e.diveTarget=new THREE.Vector3(player.pos.x,0.65,player.pos.z);
+      }
+      break; }
+    case 'DIVE': {
+      const p=Math.min(1,1-Math.max(0,e.flightT)/0.5);
+      m.position.lerpVectors(e.fromPos,e.diveTarget,p);
+      if(e.flightT<=0||m.position.y<=0.65){
+        m.position.y=0.65;
+        const d=Math.sqrt((player.pos.x-m.position.x)**2+(player.pos.z-m.position.z)**2);
+        if(d<DIVE_BLAST_R){
+          const dmg=Math.max(8,Math.round(e.damage*(1-d/DIVE_BLAST_R)));
+          player.hp-=dmg; dfEl.style.background='rgba(220,80,255,0.42)'; flashT=0.2;
+          logMsg(`💥 ${enemyLabel(e)} DIVE-BOMB! You: ${Math.max(0,player.hp)} HP`,'rgba(220,80,255,0.9)');
+          if(player.hp<=0)killPlayer();
+        }
+        spawnSparks(m.position.clone(),0xdd44ff,16);
+        shakeT=0.3; shakeMag=0.2; snd(80,0.3,'sine',0.3,30);
+        e.flightState='LEAVE'; e.flightT=1.6; e.fromPos=m.position.clone();
+        e.diveTarget=new THREE.Vector3(e.fromPos.x,e.homeY,e.fromPos.z);
+      }
+      break; }
+    case 'LEAVE': {
+      const p=Math.min(1,1-Math.max(0,e.flightT)/1.6);
+      m.position.lerpVectors(e.fromPos,e.diveTarget,p);
+      if(e.flightT<=0){ e.flightState='OUT'; e.flightT=3+Math.random()*2; }
+      break; }
+  }
+  m.rotation.y+=dt*0.6;
+}
+
+// ═══════════════════════════════════════════════════════
 // UPDATE
 // ═══════════════════════════════════════════════════════
 function update(dt){
   if(!gameActive)return;
 
-  if(wCd.normal>0)wCd.normal-=dt; if(wCd.heavy>0)wCd.heavy-=dt; if(wCd.bomb>0)wCd.bomb-=dt;
+  ['normal','heavy'].forEach(t=>{
+    const a=ammo[t];
+    if(a.fireT>0)a.fireT-=dt;
+    if(a.reloadT>0){ a.reloadT-=dt; if(a.reloadT<=0){a.cur=W[t].magSize;a.reloadT=0;} }
+  });
+  if(ammo.bomb.cd>0)ammo.bomb.cd-=dt;
 
   // ── Camera auto-aim toward nearest living enemy ──
   const alive=enemies.filter(e=>e.alive);
@@ -567,7 +841,7 @@ function update(dt){
   if(!player.grounded)player.vel.y+=GRAV*dt;
   player.pos.x+=player.vel.x*dt; player.pos.y+=player.vel.y*dt; player.pos.z+=player.vel.z*dt;
   if(player.pos.y<=P_H){player.pos.y=P_H;player.vel.y=0;player.grounded=true;}
-  wallClamp(player.pos); pillarPush(player.pos);
+  wallClamp(player.pos); obstaclePush(player.pos);
 
   if(player.grounded&&moving)player.bobT+=dt*9;
   const bob=(player.grounded&&moving)?Math.sin(player.bobT)*0.034:0;
@@ -585,6 +859,7 @@ function update(dt){
 
   enemies.forEach((e,ei)=>{
     if(!e.alive)return;
+    if(e.style==='flying'){ updateFlyingSamurai(e,dt); return; }
     const ep=e.mesh.position;
     const dx=player.pos.x-ep.x, dz=player.pos.z-ep.z;
     const dist=Math.sqrt(dx*dx+dz*dz);
@@ -626,19 +901,32 @@ function update(dt){
 
     const spd=e.state==='EVADE'?e.speed*1.25:e.state==='CHASE'?e.speed:e.speed*0.72;
     ep.x+=mv.x*spd*dt; ep.z+=mv.z*spd*dt;
-    wallClamp(ep); pillarPush(ep);
+    wallClamp(ep); obstaclePush(ep);
 
     e.walkT+=dt*5;
     if(e.grounded)ep.y=Math.abs(Math.sin(e.walkT))*0.07;
     const sw=e.mesh.userData.sword;
     if(sw)sw.rotation.z=-0.28+(e.state==='ATTACK'?Math.sin(e.walkT*1.8)*0.20:0);
 
-    e.shootT-=dt;
-    if(e.shootT<=0&&dist<14){
-      e.shootT=e.shootInterval+(Math.random()-.5)*0.8;
-      const sd2=new THREE.Vector3(dx+(Math.random()-.5)*0.7,player.pos.y-(ep.y+1.6)+(Math.random()-.5)*0.4,dz+(Math.random()-.5)*0.7).normalize();
-      const so=ep.clone(); so.y+=1.6;
-      spawnBullet(so,sd2,false,'normal');
+    if(e.style==='boss'){
+      e.attackT-=dt;
+      if(e.attackT<=0&&dist<ARENA*2){
+        e.attackT=1.4+(Math.random()-.5)*0.6;
+        const sd2=new THREE.Vector3(dx+(Math.random()-.5)*0.7,player.pos.y-(ep.y+2.2)+(Math.random()-.5)*0.4,dz+(Math.random()-.5)*0.7).normalize();
+        const so=ep.clone(); so.y+=2.2;
+        const r=Math.random();
+        const atype = r<0.45?'normal':r<0.75?'fire':'laser';
+        const dmg = atype==='fire'?Math.round(e.damage*1.15):atype==='laser'?Math.round(e.damage*1.35):e.damage;
+        spawnBullet(so,sd2,false,atype,dmg);
+      }
+    } else {
+      e.shootT-=dt;
+      if(e.shootT<=0&&dist<14){
+        e.shootT=e.shootInterval+(Math.random()-.5)*0.8;
+        const sd2=new THREE.Vector3(dx+(Math.random()-.5)*0.7,player.pos.y-(ep.y+1.6)+(Math.random()-.5)*0.4,dz+(Math.random()-.5)*0.7).normalize();
+        const so=ep.clone(); so.y+=1.6;
+        spawnBullet(so,sd2,false,'normal',e.damage);
+      }
     }
   });
 
@@ -654,13 +942,13 @@ function update(dt){
     let hit=false;
     if(b.isPlayer&&b.type!=='bomb'){
       enemies.forEach(e=>{
-        if(!e.alive||hit)return;
+        if(!e.alive||hit||e.bombOnly)return;
         const ep=e.mesh.position.clone(); ep.y+=1.3;
         const hitR=b.type==='heavy'?0.65*2.5:0.65*1.8;
         if(bp.distanceTo(ep)<hitR){
           e.hp-=W[b.type].damage; hit=true;
           snd(240,0.15,'square',0.28); spawnSparks(bp.clone(),b.type==='heavy'?0xff8800:0xff4400);
-          logMsg(`${b.type==='heavy'?'⚡ HEAVY':'🔸'} HIT Samurai ${['I','II','III'][e.index]}! HP:${Math.max(0,e.hp)}`,'rgba(255,140,60,0.9)');
+          logMsg(`${b.type==='heavy'?'⚡ HEAVY':'🔸'} HIT ${enemyLabel(e)}! HP:${Math.max(0,e.hp)}`,'rgba(255,140,60,0.9)');
           if(e.hp<=0)killEnemy(e);
         }
       });
@@ -668,9 +956,9 @@ function update(dt){
     if(!b.isPlayer&&!hit){
       const d=bp.distanceTo(player.pos);
       if(d<0.65*1.5){
-        player.hp-=enemies.find(e=>e.alive)?.damage||18; hit=true;
+        player.hp-=b.dmg||18; hit=true;
         dfEl.style.background='rgba(255,0,0,0.42)'; flashT=0.18;
-        snd(190,0.18,'square',0.3); spawnSparks(bp.clone(),0xff0000);
+        snd(190,0.18,'square',0.3); spawnSparks(bp.clone(),b.type==='laser'?0x00eaff:b.type==='fire'?0xff5500:0xff0000);
         logMsg(`💢 OUCH! You: ${Math.max(0,player.hp)} HP`,'rgba(255,80,80,0.9)');
         if(player.hp<=0)killPlayer();
       }
@@ -724,9 +1012,9 @@ function levelComplete(){
   gamePhase='levelComplete';
   const healAmt=Math.min(35,MAX_HP-player.hp);
   player.hp=Math.min(MAX_HP,player.hp+healAmt);
-  const isLast=currentLevel===3;
+  const isLast=currentLevel===5;
   if(isLast){
-    showLevelComplete(`GAME CLEAR!`,`ALL ${currentLevel} LEVELS CONQUERED`,healAmt,true);
+    showLevelComplete(`GAME CLEAR!`,`THE GIANT SAMURAI FALLS — ALL ${currentLevel} LEVELS CONQUERED`,healAmt,true);
   } else {
     showLevelComplete(`LEVEL ${currentLevel} CLEAR`,`PREPARE FOR LEVEL ${currentLevel+1}`,healAmt,false);
   }
@@ -734,7 +1022,7 @@ function levelComplete(){
 
 function showLevelComplete(title,sub,heal,isFinal){
   const el=document.getElementById('lvl-screen');
-  document.getElementById('lvl-badge').textContent = isFinal ? '★ COMPLETE ★' : `LEVEL ${currentLevel} OF 3`;
+  document.getElementById('lvl-badge').textContent = isFinal ? '★ COMPLETE ★' : `LEVEL ${currentLevel} OF 5`;
   document.getElementById('lvl-title').textContent = title;
   document.getElementById('lvl-sub').textContent   = sub;
   document.getElementById('lvl-heal').textContent  = heal>0 ? `+ ${heal} HP BONUS` : '';
@@ -749,17 +1037,17 @@ window.advanceLevel=function(){
   document.getElementById('lvl-screen').style.display='none';
   const next=currentLevel+1;
   initLevel(next);
-  // Reset weapon CDs partially (reward)
-  wCd.normal=0; wCd.heavy=Math.max(0,wCd.heavy-2); wCd.bomb=Math.max(5,wCd.bomb-3);
+  resetAmmo();
   gamePhase='playing'; gameActive=true;
   flashLevelBanner(next);
 };
 
 function flashLevelBanner(lvl){
   const el=document.getElementById('lvl-flash');
-  const labels=['','LEVEL 1','LEVEL 2\n×1.25 HARDER','LEVEL 3\n×1.56 HARDER'];
+  const labels=['','LEVEL 1','LEVEL 2\n×1.25 HARDER','LEVEL 3\n×1.56 HARDER','LEVEL 4\n×1.95 HARDER — FLYING SAMURAI','LEVEL 5\n×2.44 HARDER — BOSS: GIANT SAMURAI'];
+  const colors=['','#ffffff','#3388ff','#99ff22','#bb55ff','#ff5500'];
   el.textContent=labels[lvl]; el.style.display='block';
-  el.style.opacity='1'; el.style.color=lvl===3?'#dd00ff':lvl===2?'#ff6600':'#ffffff';
+  el.style.opacity='1'; el.style.color=colors[lvl];
   let fade=1;
   const id=setInterval(()=>{
     fade-=0.03; el.style.opacity=Math.max(0,fade);
@@ -771,7 +1059,7 @@ function killPlayer(){
   gameActive=false; gamePhase='gameOver';
   snd(80,0.9,'sine',0.4,28);
   const el=document.getElementById('end-screen');
-  document.getElementById('end-badge').textContent=`FELL ON LEVEL ${currentLevel} OF 3`;
+  document.getElementById('end-badge').textContent=`FELL ON LEVEL ${currentLevel} OF 5`;
   document.getElementById('end-badge').style.color='rgba(255,80,80,0.8)';
   document.getElementById('end-title').textContent='DEFEATED';
   document.getElementById('end-title').style.color='#ff3300';
@@ -792,7 +1080,7 @@ function fullRestart(){
   logQ.length=0; klog.innerHTML='';
   player.pos.set(0,P_H,8.5); player.vel.set(0,0,0);
   player.yaw=0; player.hp=MAX_HP; player.grounded=true; player.bobT=0;
-  wCd.normal=0; wCd.heavy=5; wCd.bomb=randBombCd();
+  resetAmmo();
   shakeT=0; flashT=0;
   initLevel(1);
   gamePhase='playing'; gameActive=true;
@@ -810,7 +1098,7 @@ window.retryLevel=function(){
   // Restore player to full HP for the retry
   player.pos.set(0,P_H,8.5); player.vel.set(0,0,0);
   player.yaw=0; player.hp=MAX_HP; player.grounded=true; player.bobT=0;
-  wCd.normal=0; wCd.heavy=5; wCd.bomb=randBombCd();
+  resetAmmo();
   shakeT=0; flashT=0;
   initLevel(currentLevel); // same level
   gamePhase='playing'; gameActive=true;
